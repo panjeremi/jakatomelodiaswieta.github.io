@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Jaka to melodia — teleturniej</title>
+  <style>
+    :root{
+      --bg:#0f1115; --surface:#131417; --card:#1b1c1f; --muted:#9aa0a6;
+      --primary:#8ab4f8; --on-primary:#061226; --accent:#b39ddb;
+      --radius:12px; --pad:14px;
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#0b0c0f);color:#eceff1}
+    .app{max-width:1000px;margin:28px auto;padding:22px;}
+    header{display:flex;gap:16px;align-items:center;margin-bottom:18px}
+    .logo{width:56px;height:56px;border-radius:10px;background:linear-gradient(135deg,var(--primary),var(--accent));display:grid;place-items:center;font-weight:700;color:var(--on-primary)}
+    h1{font-size:18px;margin:0}
+    p.lead{color:var(--muted);margin:0;font-size:13px}
+    .controls{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+    .btn{background:var(--card);border:0;padding:10px 12px;border-radius:10px;color:inherit;cursor:pointer}
+    .btn.primary{background:linear-gradient(180deg,var(--primary),#5f9df0);color:var(--on-primary);font-weight:600}
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04)}
+    .panel{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:var(--pad);border-radius:var(--radius);}
+    .song-list{display:grid;gap:8px}
+    .song{display:flex;align-items:center;gap:10px;padding:10px;border-radius:10px;background:rgba(255,255,255,0.01)}
+    .song.played{opacity:0.55;text-decoration:line-through}
+    .song .title{flex:1}
+    .small{font-size:12px;color:var(--muted)}
+    footer{margin-top:18px;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">JM</div>
+    <div>
+      <h1>Jaka to melodia — szkolny teleturniej</h1>
+      <p class="lead">Losowanie piosenek z lokalnych plików MP3</p>
+    </div>
+  </header>
+
+  <div class="controls">
+    <button id="randomBtn" class="btn primary">Losuj piosenkę</button>
+    <button id="pauseBtn" class="btn">⏸ Pauza</button>
+    <button id="resetBtn" class="btn ghost">Resetuj oznaczenia</button>
+    <label class="small" style="display:flex;align-items:center;gap:8px">
+      <input id="autoMark" type="checkbox"> Oznacz automatycznie
+    </label>
+  </div>
+
+  <main class="panel">
+    <h3 style="margin-top:0">Lista utworów</h3>
+    <div id="songList" class="song-list"></div>
+  </main>
+
+  <footer>
+    <div class="small">Stan zapisany lokalnie w przeglądarce</div>
+  </footer>
+
+  <audio id="player" preload="auto"></audio>
+</div>
+
+<script>
+const categories = [
+  {
+    files: [
+      { file: 'songs/All I Want for Christmas Is You Mariah Carey.mp3' },
+      { file: 'songs/Driving Home For Christmas Chris Rea.mp3' },
+      { file: 'songs/Dzien jeden w roku czerwone gitary.mp3' },
+      { file: 'songs/Happy Xmas John Lennon.mp3' },
+      { file: 'songs/Holly Jolly Christmas Michael Buble.mp3' },
+      { file: 'songs/Kto wie De Su.mp3' },
+      { file: 'songs/ktos taki jak ty wersow.mp3' },
+      { file: 'songs/Last Christmas Wham.mp3' },
+      { file: 'songs/Rockin Around The Christmas Tree Brenda Lee.mp3' },
+      { file: 'songs/Santa Tell Me Ariana Grande.mp3' },
+      { file: 'songs/Z kopyta kulig rwie skaldowie.mp3' },
+      { file: 'songs/Zasniezone miasta Gromee.mp3' }
+    ]
+  }
+];
+
+const player = document.getElementById('player');
+const songListEl = document.getElementById('songList');
+const randomBtn = document.getElementById('randomBtn');
+const resetBtn = document.getElementById('resetBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const autoMarkEl = document.getElementById('autoMark');
+
+const STORAGE_KEY = 'jakaMelodia_played_v1';
+let playedState = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(playedState));
+}
+
+const allSongs = [];
+categories.forEach(cat=>{
+  cat.files.forEach(f=>{
+    const id = 'song_' + allSongs.length;
+    const title = f.file.split('/').pop().replace(/\.mp3$/i,'');
+    allSongs.push({ id, file:f.file, title });
+  });
+});
+
+function renderSongList(){
+  songListEl.innerHTML='';
+  allSongs.forEach(song=>{
+    const div=document.createElement('div');
+    div.className='song';
+    if(playedState[song.id]) div.classList.add('played');
+
+    div.innerHTML = `
+      <div class="title">
+        <div style="font-weight:600">${song.title}</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" data-play="${song.id}">▶</button>
+        <button class="btn" data-toggle="${song.id}">✓</button>
+      </div>
+    `;
+    songListEl.appendChild(div);
+  });
+
+  songListEl.querySelectorAll('button').forEach(btn=>{
+    btn.onclick = ()=>{
+      const playId = btn.dataset.play;
+      const toggleId = btn.dataset.toggle;
+      if(playId) playSong(allSongs.find(s=>s.id===playId));
+      if(toggleId) togglePlayed(toggleId);
+    };
+  });
+}
+
+function playSong(song){
+  if(!song) return;
+  player.src = song.file;
+  player.play().catch(()=>{});
+  if(autoMarkEl.checked) markPlayed(song.id,true);
+}
+
+function togglePlayed(id){
+  markPlayed(id, !playedState[id]);
+}
+
+function markPlayed(id,val){
+  if(val) playedState[id]=true;
+  else delete playedState[id];
+  save();
+  renderSongList();
+}
+
+randomBtn.onclick = ()=>{
+  const remaining = allSongs.filter(s=>!playedState[s.id]);
+  const pool = remaining.length ? remaining : allSongs;
+  playSong(pool[Math.floor(Math.random()*pool.length)]);
+};
+
+pauseBtn.onclick = ()=>{ if(!player.paused) player.pause(); };
+
+resetBtn.onclick = ()=>{
+  if(confirm('Zresetować oznaczenia?')){
+    playedState={}; save(); renderSongList();
+  }
+};
+
+renderSongList();
+</script>
+</body>
+</html>
